@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "alexa-sdk": "^1.0.6",
+    "contentful": "^3.8.1"
+  }
+}
