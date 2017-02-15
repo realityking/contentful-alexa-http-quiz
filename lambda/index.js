@@ -49,9 +49,9 @@ var newSessionHandlers = Object.assign({
 }, otherNewSessionStateHandlers);
 
 var startStateHandlers = Alexa.CreateStateHandler(GAME_STATES.START, {
-  "StartGame": function (newGame) {
+  "StartGame": function (isNewGame) {
     var that = this;
-    var speechOutput = newGame ? "Welcome to HTTP Trivia Quiz. I will ask you " + config.gameLength + " questions, try to get as many right as you can. Just say the letter of the answer. Let\'s begin. " : "";
+    var speechOutput = isNewGame ? "Welcome to HTTP Trivia Quiz. I will ask you " + config.gameLength + " questions, try to get as many right as you can. Just say the letter of the answer. Let\'s begin. " : "";
 
     contentful.getAllQuestions()
       .then(function (items) {
