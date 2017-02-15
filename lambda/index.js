@@ -4,22 +4,12 @@ var Alexa = require('alexa-sdk');
 var config = require('./config');
 var logError = require('./lib/log-error');
 
-
 var contentful = require('./lib/contentful-client')(config);
 
 var GAME_STATES = {
   TRIVIA: "_TRIVIAMODE", // Asking trivia questions.
   START: "_STARTMODE", // Entry point, start the game.
   HELP: "_HELPMODE" // The user is asking for help.
-};
-
-var NUMBER_TO_LETTER = ['A', 'B', 'C', 'D', 'E'];
-var LETTER_TO_NUMBER = {
-  A: 0,
-  B: 1,
-  C: 2,
-  D: 3,
-  E: 4
 };
 
 exports.handler = function(event, context, callback){
@@ -31,22 +21,8 @@ exports.handler = function(event, context, callback){
 
 var helpStateHandlers = require('./lib/help-state-handlers')(config, GAME_STATES);
 var otherTriviaSteHandlers = require('./lib/other-trvia-state-handlers')(config, GAME_STATES);
-var otherNewSessionStateHandlers = require('./lib/other-new-session-state-handlers')(config, GAME_STATES);
-var isAnswerSlotValid = require('./lib/is-slot-valid')(LETTER_TO_NUMBER);
-var pickGameQuestions = require('./lib/pick-questions')(config);
-var populateRoundAnswers = require('./lib/populate-round-answers')(config);
-
-var newSessionHandlers = Object.assign({
-  "LaunchRequest": function () {
-    this.handler.state = GAME_STATES.START;
-    this.emitWithState("StartGame", true);
-  },
-
-  "AMAZON.HelpIntent": function() {
-    this.handler.state = GAME_STATES.HELP;
-    this.emitWithState("helpTheUser", true);
-  }
-}, otherNewSessionStateHandlers);
+var newSessionHandlers = require('./lib/other-new-session-state-handlers')(config, GAME_STATES);
+var helper = require('./lib/helpers')(config);
 
 var startStateHandlers = Alexa.CreateStateHandler(GAME_STATES.START, {
   "StartGame": function (isNewGame) {
@@ -55,35 +31,21 @@ var startStateHandlers = Alexa.CreateStateHandler(GAME_STATES.START, {
 
     contentful.getAllQuestions()
       .then(function (items) {
-        var gameQuestions = pickGameQuestions(items);
-        var currentQuestionIndex = 0;
-        var currentQuestion = items.find(function (question) {
-          return question.sys.id === gameQuestions[currentQuestionIndex];
-        }).fields;
+        var state = helper.initGame(items);
+        var currentQuestion = helper.getCurrentQuestion(items, state);
+        var roundAnswers = helper.populateRoundAnswers(currentQuestion, state);
 
-        // Generate a random index for the correct answer, from 0 to ANSWER_COUNT - 1
-        var correctAnswerIndex = Math.floor(Math.random() * (config.answerCount));
-
-        var spokenQuestion = currentQuestion.question;
-        var roundAnswers = populateRoundAnswers(currentQuestion, correctAnswerIndex);
-
-        var repromptText = "Question 1. " + spokenQuestion + " ";
+        var repromptText = "Question 1. " + currentQuestion.question + " ";
 
         for (var i = 0; i < config.answerCount; i++) {
-          repromptText += NUMBER_TO_LETTER[i] + ". " + roundAnswers[i] + ". ";
+          repromptText += helper.toLetter(i) + ". " + roundAnswers[i] + ". ";
         }
 
         speechOutput += repromptText;
-        var currentScore = 0;
 
-        Object.assign(that.attributes, {
-          "speechOutput": repromptText,
-          "repromptText": repromptText,
-          "currentQuestionIndex": currentQuestionIndex,
-          "correctAnswerIndex": correctAnswerIndex,
-          "questions": gameQuestions,
-          "score": currentScore,
-          "correctAnswerText": currentQuestion.correctAnswer
+        Object.assign(that.attributes, state, {
+          repromptText: repromptText,
+          correctAnswerText: currentQuestion.correctAnswer
         });
 
         // Set the current state to trivia mode. The skill will now use handlers defined in triviaStateHandlers
@@ -104,64 +66,45 @@ var triviaStateHandlers = Alexa.CreateStateHandler(GAME_STATES.TRIVIA, Object.as
 }, otherTriviaSteHandlers));
 
 function handleUserGuess(userGaveUp) {
-  var answerSlotValid = isAnswerSlotValid(this.event.request.intent);
+  var state = helper.decodeState(this.attributes);
   var speechOutput = "";
   var speechOutputAnalysis = "";
-  var gameQuestions = this.attributes.questions;
-  var correctAnswerIndex = parseInt(this.attributes.correctAnswerIndex);
-  var currentScore = parseInt(this.attributes.score);
-  var currentQuestionIndex = parseInt(this.attributes.currentQuestionIndex);
-  var correctAnswerText = this.attributes.correctAnswerText;
   var that = this;
 
-  if (answerSlotValid && LETTER_TO_NUMBER[this.event.request.intent.slots.Answer.value[0].toUpperCase()] === correctAnswerIndex) {
-    currentScore++;
+  if (helper.isAnswerCorrect(this.event.request.intent, state)) {
+    state.score++;
     speechOutputAnalysis = "correct. ";
   } else {
     if (!userGaveUp) {
       speechOutputAnalysis = "wrong. ";
     }
 
-    speechOutputAnalysis += "The correct answer is " + NUMBER_TO_LETTER[correctAnswerIndex] + ": " + correctAnswerText + ". ";
+    speechOutputAnalysis += "The correct answer is " + helper.toLetter(state.correctAnswerIndex) + ": " + state.correctAnswerText + ". ";
   }
 
-  // Check if we can exit the game session after GAME_LENGTH questions (zero-indexed)
-  if (currentQuestionIndex == config.gameLength - 1) {
+  if (helper.isGameOver(state)) {
     speechOutput = userGaveUp ? "" : "That answer is ";
-    speechOutput += speechOutputAnalysis + "You got " + currentScore.toString() + " out of " + config.gameLength.toString() + " questions correct. Thank you for playing!";
+    speechOutput += speechOutputAnalysis + "You got " + state.score.toString() + " out of " + config.gameLength.toString() + " questions correct. Thank you for playing!";
 
     this.emit(":tell", speechOutput)
   } else {
-    currentQuestionIndex += 1;
-    correctAnswerIndex = Math.floor(Math.random() * (config.answerCount));
+    state = helper.playRound(state);
 
-    contentful.getOneQuestion(gameQuestions[currentQuestionIndex])
-      .then(function(question) {
-        var currentQuestion = question.fields;
-
-        // Select and shuffle the answers for each question
-        var roundAnswers = populateRoundAnswers(currentQuestion, correctAnswerIndex);
-
-        var spokenQuestion = currentQuestion.question;
-
-        var questionIndexForSpeech = currentQuestionIndex + 1;
-        var repromptText = "Question " + questionIndexForSpeech.toString() + ". " + spokenQuestion + " ";
+    contentful.getOneQuestion(state.questions[state.currentQuestionIndex])
+      .then(function(currentQuestion) {
+        var roundAnswers = helper.populateRoundAnswers(currentQuestion, state);
+        var repromptText = "Question " + helper.getQuestionIndexForSpeech(state) + ". " + currentQuestion.question + " ";
 
         for (var i = 0; i < config.answerCount; i++) {
-          repromptText += NUMBER_TO_LETTER[i] + ". " + roundAnswers[i] + ". ";
+          repromptText += helper.toLetter(i) + ". " + roundAnswers[i] + ". ";
         }
 
         speechOutput += userGaveUp ? "" : "That answer is ";
-        speechOutput += speechOutputAnalysis + "Your score is " + currentScore.toString() + ". " + repromptText;
+        speechOutput += speechOutputAnalysis + "Your score is " + state.score.toString() + ". " + repromptText;
 
-        Object.assign(that.attributes, {
-          "speechOutput": repromptText,
-          "repromptText": repromptText,
-          "currentQuestionIndex": currentQuestionIndex,
-          "correctAnswerIndex": correctAnswerIndex,
-          "questions": gameQuestions,
-          "score": currentScore,
-          "correctAnswerText": currentQuestion.correctAnswer
+        Object.assign(that.attributes, state, {
+          repromptText: repromptText,
+          correctAnswerText: currentQuestion.correctAnswer
         });
 
         that.emit(":ask", speechOutput, repromptText);

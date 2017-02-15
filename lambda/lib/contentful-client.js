@@ -17,7 +17,10 @@ module.exports = function createClient(config) {
     },
 
     getOneQuestion: function getOneQuestion(id) {
-      return client.getEntry(id);
+      return client.getEntry(id)
+        .then(function(question) {
+          return question.fields;
+        });
     },
 
     getAllFacts: function() {

@@ -7,7 +7,7 @@ module.exports = function (config, GAME_STATES) {
       this.emitWithState("StartGame", false);
     },
     "AMAZON.RepeatIntent": function () {
-      this.emit(":ask", this.attributes["speechOutput"], this.attributes["repromptText"]);
+      this.emit(":ask", this.attributes["repromptText"], this.attributes["repromptText"]);
     },
     "AMAZON.HelpIntent": function () {
       this.handler.state = GAME_STATES.HELP;
