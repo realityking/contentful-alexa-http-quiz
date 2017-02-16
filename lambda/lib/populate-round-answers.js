@@ -3,10 +3,9 @@
 var shuffleArray = require('./shuffle-array');
 
 module.exports = function (config) {
-  return function populateRoundAnswers(question, state) {
+  return function populateRoundAnswers(question, correctAnswerTargetLocation) {
     var answers = [];
     var incorrectAnswers = shuffleArray(question.incorrectAnswers);
-    var correctAnswerTargetLocation = state.correctAnswerIndex;
 
     // Take the first ANSWER_COUNT-1 wrong answers
     for (var i = 0; i < config.answerCount - 1; i++) {

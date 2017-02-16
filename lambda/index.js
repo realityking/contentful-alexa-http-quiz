@@ -12,17 +12,17 @@ var GAME_STATES = {
   HELP: "_HELPMODE" // The user is asking for help.
 };
 
+var helpStateHandlers = require('./lib/help-state-handlers')(config, GAME_STATES);
+var otherTriviaSteHandlers = require('./lib/other-trvia-state-handlers')(config, GAME_STATES);
+var newSessionHandlers = require('./lib/other-new-session-state-handlers')(config, GAME_STATES);
+var helper = require('./lib/helpers')(config);
+
 exports.handler = function(event, context, callback){
   var alexa = Alexa.handler(event, context);
   alexa.appId = config.appId;
   alexa.registerHandlers(newSessionHandlers, startStateHandlers, triviaStateHandlers, helpStateHandlers);
   alexa.execute();
 };
-
-var helpStateHandlers = require('./lib/help-state-handlers')(config, GAME_STATES);
-var otherTriviaSteHandlers = require('./lib/other-trvia-state-handlers')(config, GAME_STATES);
-var newSessionHandlers = require('./lib/other-new-session-state-handlers')(config, GAME_STATES);
-var helper = require('./lib/helpers')(config);
 
 var startStateHandlers = Alexa.CreateStateHandler(GAME_STATES.START, {
   "StartGame": function (isNewGame) {
@@ -32,14 +32,10 @@ var startStateHandlers = Alexa.CreateStateHandler(GAME_STATES.START, {
     contentful.getAllQuestions()
       .then(function (items) {
         var state = helper.initGame(items);
-        var currentQuestion = helper.getCurrentQuestion(items, state);
-        var roundAnswers = helper.populateRoundAnswers(currentQuestion, state);
+        var currentQuestion = state.getCurrentQuestion(items);
 
-        var repromptText = "Question 1. " + currentQuestion.question + " ";
-
-        for (var i = 0; i < config.answerCount; i++) {
-          repromptText += helper.toLetter(i) + ". " + roundAnswers[i] + ". ";
-        }
+        var repromptText = "Question " + state.getQuestionIndexForSpeech() + ". " + currentQuestion.question + " ";
+        repromptText += state.createAnswerList(currentQuestion, state);
 
         speechOutput += repromptText;
 
@@ -71,7 +67,7 @@ function handleUserGuess(userGaveUp) {
   var speechOutputAnalysis = "";
   var that = this;
 
-  if (helper.isAnswerCorrect(this.event.request.intent, state)) {
+  if (state.isAnswerCorrect(this.event.request.intent)) {
     state.score++;
     speechOutputAnalysis = "correct. ";
   } else {
@@ -82,22 +78,19 @@ function handleUserGuess(userGaveUp) {
     speechOutputAnalysis += "The correct answer is " + helper.toLetter(state.correctAnswerIndex) + ": " + state.correctAnswerText + ". ";
   }
 
-  if (helper.isGameOver(state)) {
+  if (state.isGameOver()) {
     speechOutput = userGaveUp ? "" : "That answer is ";
     speechOutput += speechOutputAnalysis + "You got " + state.score.toString() + " out of " + config.gameLength.toString() + " questions correct. Thank you for playing!";
 
     this.emit(":tell", speechOutput)
   } else {
-    state = helper.playRound(state);
+    state.playRound();
 
-    contentful.getOneQuestion(state.questions[state.currentQuestionIndex])
+    contentful.getOneQuestion(state.getQuestionId())
       .then(function(currentQuestion) {
-        var roundAnswers = helper.populateRoundAnswers(currentQuestion, state);
-        var repromptText = "Question " + helper.getQuestionIndexForSpeech(state) + ". " + currentQuestion.question + " ";
+        var repromptText = "Question " + state.getQuestionIndexForSpeech() + ". " + currentQuestion.question + " ";
 
-        for (var i = 0; i < config.answerCount; i++) {
-          repromptText += helper.toLetter(i) + ". " + roundAnswers[i] + ". ";
-        }
+        repromptText += state.createAnswerList(currentQuestion);
 
         speechOutput += userGaveUp ? "" : "That answer is ";
         speechOutput += speechOutputAnalysis + "Your score is " + state.score.toString() + ". " + repromptText;
