@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-LAMBDA_FUNCTION_NAME="ContentfulHttpQuiz"
+LAMBDA_FUNCTION_NAME="SanFranciscoQuiz"
 
 rm index.zip
 cd lambda

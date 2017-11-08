@@ -69,6 +69,13 @@ module.exports = function (config) {
       return items.find(function (question) {
         return question.sys.id === this.questions[this.currentQuestionIndex];
       }.bind(this)).fields;
+    };
+
+    this.getQuestionText = function (currentQuestion) {
+      let repromptText = "Question " + this.getQuestionIndexForSpeech() + ". " + currentQuestion.question + " ";
+      repromptText += this.createAnswerList(currentQuestion);
+
+      return repromptText;
     }
   }
 

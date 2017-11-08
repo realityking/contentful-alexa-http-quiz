@@ -1,6 +1,6 @@
 'use strict';
 
-module.exports = function (config, GAME_STATES) {
+module.exports = function (config, GAME_STATES, handleUserGuess) {
   return {
     "AMAZON.StartOverIntent": function () {
       this.handler.state = GAME_STATES.START;
@@ -15,18 +15,24 @@ module.exports = function (config, GAME_STATES) {
     },
     "AMAZON.StopIntent": function () {
       this.handler.state = GAME_STATES.HELP;
-      var speechOutput = "Would you like to keep playing?";
+      const speechOutput = "Would you like to keep playing?";
       this.emit(":ask", speechOutput, speechOutput);
     },
     "AMAZON.CancelIntent": function () {
       this.emit(":tell", "Ok, let\'s play again soon.");
     },
     "Unhandled": function () {
-      var speechOutput = "Try saying a number between 1 and " + NUMBER_TO_LETTER[config.answerCount];
+      const speechOutput = "Try saying a number between 1 and " + NUMBER_TO_LETTER[config.answerCount];
       this.emit(":ask", speechOutput, speechOutput);
     },
     "SessionEndedRequest": function () {
       console.log("Session ended in trivia state: " + this.event.request.reason);
+    },
+    "AnswerIntent": function () {
+      handleUserGuess.call(this, false);
+    },
+    "DontKnowIntent": function () {
+      handleUserGuess.call(this, true);
     }
   };
 };
